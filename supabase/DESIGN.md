@@ -1,6 +1,6 @@
 # 本番リリース設計書（Phase 0）— X-LABO 代理店管理アプリ
 
-構成：**Supabase（DB・認証・権限）＋ Vercel（画面）／東京リージョン**
+構成：**Supabase（DB・認証・権限）＋ surge＋GitHub Actions（静的書き出し・自動公開）／東京リージョン**（退職サポートと同方式）
 
 現状は「インメモリ試作」（データが保存されない）。本番は Supabase の実データベースに置き換え、
 ログイン・権限（RLS）・操作ログ・実データ移行（本部の管理スプレッドシート）を行う。
@@ -13,7 +13,8 @@
 ```
 [利用者のブラウザ]
       │
-[Vercel] Next.js（画面）  ──►  [Supabase]
+[surge] Next.js静的書き出し（画面）  ──►  [Supabase]
+  ▲ main へ push すると GitHub Actions が自動ビルド＆反映
                                  ├ Auth（メール＋パスワード）
                                  ├ Postgres（実データ）※東京リージョン
                                  ├ RLS（行レベル権限：運営 / 代理店 / ルビー）
@@ -87,7 +88,7 @@
 | Phase 3 | 最新の管理スプレッドシート1部 | CSV移行用 |
 | Phase 4 | 送信元メールのドメイン設定 | 招待/再設定メール用 |
 
-> 💰 本番運用で Supabase・Vercel とも小額の月額（各 無料枠〜$25程度）が発生する可能性。
+> 💰 本番運用で Supabase は無料枠〜小額の月額が発生する可能性（surge は無料）。
 
 ---
 
@@ -96,7 +97,7 @@
 1. **（済）Phase 0**：スキーマ `schema.sql`・権限 `rls.sql`・本設計書・アプリ側の接続実装
 2. **Phase 1**：本部がSupabaseプロジェクト作成 → `schema.sql`→`rls.sql` を実行してDB構築
 3. **Phase 2**：画面をSupabaseに接続（`.env.local`）、認証・3権限・**書込みのDB永続化**を有効化（＝アプリで直接一元管理の前提）
-4. **Phase 3**：GitHub リポジトリ整備＋Vercel公開。運用担当（社内）が Claude Code + GitHub で修正・運用
+4. **Phase 3**：GitHub 整備済＋surge自動公開（.github/workflows/deploy.yml）。運用担当（社内）が Claude Code + GitHub で修正→pushするだけで反映
 5. **Phase 4**：操作ログ・メール・テスト → 本番運用開始
 
 ※ CSV移行は行わない（既存データなし・アプリで直接管理）。Phase 1 に進むには Supabaseアカウントの用意（無料枠）だけお願いします。

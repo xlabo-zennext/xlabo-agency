@@ -24,7 +24,7 @@ npm run dev
 
 ## 本番リリース構成（納品・退職サポートと同方式）
 
-Supabase（DB・認証・権限）＋ Vercel（画面）。未接続の間はデモ（インメモリ）で動作します。
+Supabase（DB・認証・権限）＋ surge＋GitHub Actions（静的書き出し・main へ push で自動公開／退職サポートと同方式）。未接続の間はデモ（インメモリ）で動作します。
 
 - `supabase/schema.sql` … 本番DBスキーマ（profiles/agents/members/cases/leads/reward_payouts/audit_log）
 - `supabase/rls.sql` … 行レベル権限（運営=全権／代理店=自分の分のみ／ルビー=紹介先の実績のみ・会員個人情報は不可）
@@ -32,8 +32,8 @@ Supabase（DB・認証・権限）＋ Vercel（画面）。未接続の間はデ
 - `supabase/MIGRATION_MAP.md` … 管理スプレッドシート各タブ → テーブルの移行対応
 - `lib/supabase.ts` … 接続クライアント／`.env.local` に URL・anon キーを設定すると本番モード
 
-進め方：**Phase 0（済＝上記一式）→ Phase 1 本部がSupabaseプロジェクト作成 → Phase 2 接続・認証・権限 → Phase 3 CSV移行 → Phase 4 公開**。
-本部にお願いするのは Supabaseアカウント作成（無料枠可）から。詳細は `supabase/DESIGN.md`。
+進め方：**Phase 0（済＝上記一式）→ Phase 1 本部がSupabaseプロジェクト作成 → Phase 2 接続・認証・権限・書込み永続化 → Phase 3 surge自動公開（GitHub Actions）→ Phase 4 本番運用**。
+※CSV移行は行わない（既存データなし・アプリで直接一元管理）。本部にお願いするのは Supabaseアカウント作成（無料枠可）から。詳細は `supabase/DESIGN.md`。
 
 ## 画面構成
 
