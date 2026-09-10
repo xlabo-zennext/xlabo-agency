@@ -1,13 +1,13 @@
 "use client";
 
-// アプリ全体の状態（ダミーDB）。本部の操作が代理店画面に即反映される。
-// 本番はここをスプレッドシート双方向同期／DB＋認証・権限（RLS）に置き換える。
+// アプリ全体の状態（DB＝Supabase / 未接続時はインメモリのデモ）。
+// 本部の操作が代理店画面に即反映される。Supabase接続時は入力がDBに永続化される（Phase 2）。
 
 import React, { createContext, useContext, useMemo, useState, useEffect } from "react";
 import { Agent, Case, CaseStatus, IndivRank, User, Lead, LeadStatus, AuditLog, Role } from "./types";
 import { AGENTS, CASES, USERS, LEADS, INITIAL_LOGS, INITIAL_PAID } from "./mock";
-import { buildStats, rewardItems } from "./calc";
-import { casePoints, rankLabelOf, MONTHLY_FEE } from "./config";
+import { buildStats, rewardItems, honninKey, shotKey, rubyKey } from "./calc";
+import { casePoints, rankLabelOf, MONTHLY_FEE, CURRENT_MONTH } from "./config";
 import { supabase, supabaseReady } from "./supabase";
 import {
   pushRows, caseToRow, agentToRow, userToRow, sheetSyncEnabled,
@@ -16,6 +16,15 @@ import {
 
 const OPERATOR = "運営管理者";
 const today = () => new Date().toISOString().slice(0, 10);
+
+// ── Supabaseへの書き込み（未接続時は no-op・失敗してもUIは止めない） ──
+function push(p: PromiseLike<unknown> | undefined) {
+  if (supabaseReady && p) Promise.resolve(p).then(() => {}, () => {});
+}
+const caseDb = (c: Case) => ({ id: c.id, case_no: c.caseNo, agent_id: c.agentId, type: c.type, customer: c.customer, status: c.status, points: c.points ?? null, shot_reward: c.shotReward ?? null, staff: c.staff ?? null, note: c.note ?? null, date: c.date });
+const userDb = (u: User) => ({ id: u.id, member_no: u.memberNo, agent_id: u.agentId, name: u.name, phone: u.phone ?? null, line_name: u.lineName ?? null, email: u.email ?? null, pref: u.pref ?? null, join_date: u.joinDate ?? null, start_date: u.startDate ?? null, cancel_date: u.cancelDate ?? null, monthly_fee: u.monthlyFee, pay_method: u.payMethod ?? null, pay_status: u.payStatus ?? null, status: u.status, note: u.note ?? null });
+const leadDb = (l: Lead) => ({ id: l.id, lead_no: l.leadNo, agent_id: l.agentId, name: l.name, phone: l.phone ?? null, line_name: l.lineName ?? null, email: l.email ?? null, pref: l.pref ?? null, message: l.message ?? null, status: l.status, date: l.date, converted_member_id: l.convertedUserId ?? null });
+const agentDb = (a: Agent) => ({ id: a.id, no: a.no, name: a.name, kind: a.kind, rank: a.rank, referrer_id: a.referrerId, category: a.category, code: a.code, base_pt: a.basePt, join_date: a.joinDate, phone: a.phone ?? null, email: a.email ?? null, address: a.address ?? null });
 
 interface Store {
   agents: Agent[];
@@ -26,31 +35,25 @@ interface Store {
   viewAgentId: string;
   setViewAgentId: (id: string) => void;
 
-  // 案件
   addCase: (c: Omit<Case, "id" | "caseNo">) => void;
   setCaseStatus: (id: string, status: CaseStatus) => void;
   setShotReward: (id: string, amount: number) => void;
   setCasePoints: (id: string, points: number) => void;
 
-  // 会員（アクティブユーザー）
   addUser: (u: Omit<User, "id" | "memberNo" | "status">) => void;
   cancelUser: (id: string, cancelDate: string) => void;
   reactivateUser: (id: string) => void;
 
-  // 見込み客（申込）
-  addLead: (l: Omit<Lead, "id" | "leadNo" | "status" | "date">) => void; // 公開フォームから
+  addLead: (l: Omit<Lead, "id" | "leadNo" | "status" | "date">) => void;
   setLeadStatus: (id: string, status: LeadStatus) => void;
-  convertLead: (id: string, opts?: { payMethod?: string }) => void; // 会員化（登録・決済完了）
+  convertLead: (id: string, opts?: { payMethod?: string }) => void;
 
-  // ランク・代理店
   setRank: (id: string, rank: IndivRank) => void;
   addAgent: (a: Omit<Agent, "id" | "no" | "basePt" | "code">) => void;
 
-  // 報酬支払
   paid: Record<string, { amount: number; date: string }>;
   payReward: (p: { key: string; agentId: string; amount: number; date: string }) => void;
 
-  // スプレッドシート反映
   syncEnabled: boolean;
   pushActiveUsers: () => Promise<SyncResult>;
 
@@ -61,7 +64,6 @@ interface Store {
 const Ctx = createContext<Store | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  // 未接続（デモ）＝mock、Supabase接続時＝DBから読込（下の useEffect）
   const [baseAgents, setBaseAgents] = useState<Agent[]>(supabaseReady ? [] : AGENTS);
   const [cases, setCases] = useState<Case[]>(supabaseReady ? [] : CASES);
   const [users, setUsers] = useState<User[]>(supabaseReady ? [] : USERS);
@@ -70,7 +72,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [paid, setPaid] = useState<Record<string, { amount: number; date: string }>>(supabaseReady ? {} : INITIAL_PAID);
   const [viewAgentId, setViewAgentId] = useState<string>(supabaseReady ? "" : "003");
 
-  // ── Supabase 接続時：初回にDBから読み込む（Phase 2：書込みのDB反映を追加予定） ──
+  // アクティブユーザー数 = 「有効」会員数（会員登録・解約から自動算出）
+  const agents = useMemo(
+    () => baseAgents.map((a) => ({ ...a, activeUsers: users.filter((u) => u.agentId === a.id && u.status === "有効").length })),
+    [baseAgents, users]
+  );
+
+  const stats = useMemo(() => buildStats(agents, cases, paid), [agents, cases, paid]);
+  const rewards = useMemo(() => rewardItems(agents, cases), [agents, cases]);
+
+  const agentNoOf = (id: string) => agents.find((a) => a.id === id)?.no || id;
+  const referrerNoOf = (id: string | null) => (id ? agents.find((a) => a.id === id)?.no : undefined);
+
+  // ── Supabase接続時：初回にDBから読み込む ──
   useEffect(() => {
     if (!supabaseReady) return;
     supabase.from("agents").select("*").then(({ data }) => {
@@ -107,26 +121,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         email: r.email, pref: r.pref, message: r.message, status: r.status, date: r.date, convertedUserId: r.converted_member_id,
       })));
     });
+    supabase.from("reward_payouts").select("*").limit(5000).then(({ data }) => {
+      if (!data) return;
+      const p: Record<string, { amount: number; date: string }> = {};
+      for (const r of data as any[]) {
+        const key = r.kind === "ショット報酬" ? shotKey(r.ref_id)
+          : r.kind === "本人報酬" ? honninKey(r.agent_id, r.month)
+          : rubyKey(r.agent_id, r.month);
+        p[key] = { amount: r.amount, date: r.paid_date };
+      }
+      setPaid(p);
+    });
     supabase.from("audit_log").select("*").order("at", { ascending: false }).limit(500).then(({ data }) => {
       if (!data) return;
       setLogs(data.map((r: any) => ({ id: String(r.id), time: r.at, actor: r.actor_name ?? "", role: r.role ?? "運営管理者", action: r.action, detail: r.detail ?? "" })));
     });
   }, []);
 
-  // アクティブユーザー数 = 「有効」会員数（会員登録・解約から自動算出）
-  const agents = useMemo(
-    () => baseAgents.map((a) => ({ ...a, activeUsers: users.filter((u) => u.agentId === a.id && u.status === "有効").length })),
-    [baseAgents, users]
-  );
-
-  const stats = useMemo(() => buildStats(agents, cases, paid), [agents, cases, paid]);
-  const rewards = useMemo(() => rewardItems(agents, cases), [agents, cases]);
-
-  const agentNoOf = (id: string) => agents.find((a) => a.id === id)?.no || id;
-  const referrerNoOf = (id: string | null) => (id ? agents.find((a) => a.id === id)?.no : undefined);
-
-  const addLog = (action: string, detail: string, actor = OPERATOR, role: Role = "運営管理者") =>
+  // 操作ログ（ローカル追記＋Supabaseへ永続化）
+  const addLog = (action: string, detail: string, actor = OPERATOR, role: Role = "運営管理者") => {
     setLogs((prev) => [{ id: `log-${prev.length + 1}`, time: new Date().toISOString(), actor, role, action, detail }, ...prev]);
+    push(supabase.from("audit_log").insert({ actor_name: actor, role, action, detail }));
+  };
 
   const value: Store = {
     agents, cases, users, leads, logs, viewAgentId, setViewAgentId, stats, rewards, paid,
@@ -149,6 +165,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const n = cases.length + 1;
       const rec: Case = { ...c, id: `new-${n}-${c.agentId}`, caseNo: "C-" + String(n).padStart(4, "0") };
       setCases((prev) => [rec, ...prev]);
+      push(supabase.from("cases").insert(caseDb(rec)));
       addLog("案件登録", `${rec.caseNo} ${rec.customer}（${rec.type}・${agentNoOf(c.agentId)}）`);
       void pushRows(TAB_CASES, [caseToRow({
         caseNo: rec.caseNo, agentNo: agentNoOf(c.agentId), customer: rec.customer, type: rec.type,
@@ -158,12 +175,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     setCaseStatus: (id, status) => {
       setCases((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
+      push(supabase.from("cases").update({ status }).eq("id", id));
       const c = cases.find((x) => x.id === id);
       addLog("案件ステータス変更", `${c?.caseNo || id} → ${status}`);
     },
 
     setShotReward: (id, amount) => {
       setCases((prev) => prev.map((c) => (c.id === id ? { ...c, shotReward: amount } : c)));
+      push(supabase.from("cases").update({ shot_reward: amount }).eq("id", id));
       const c = cases.find((x) => x.id === id);
       addLog("ショット報酬変更", `${c?.caseNo || id} → ${amount.toLocaleString()}円`);
     },
@@ -171,6 +190,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setCasePoints: (id, points) => {
       const v = Math.max(0, Math.floor(points));
       setCases((prev) => prev.map((c) => (c.id === id ? { ...c, points: v } : c)));
+      push(supabase.from("cases").update({ points: v }).eq("id", id));
       const c = cases.find((x) => x.id === id);
       addLog("付与ポイント変更", `${c?.caseNo || id} → ${v.toLocaleString()}pt`);
     },
@@ -179,6 +199,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const n = users.length + 1;
       const rec: User = { ...u, id: `u-new-${n}`, memberNo: "U-" + String(n).padStart(4, "0"), monthlyFee: u.monthlyFee || MONTHLY_FEE, status: "有効" };
       setUsers((prev) => [rec, ...prev]);
+      push(supabase.from("members").insert(userDb(rec)));
       addLog("会員登録", `${rec.memberNo} ${rec.name}（${agentNoOf(rec.agentId)}）`);
       void pushRows(TAB_USERS, [userToRow({ ...rec, agentNo: agentNoOf(rec.agentId) })], "upsert", "ユーザーID");
     },
@@ -186,6 +207,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     cancelUser: (id, cancelDate) => {
       let rec: User | undefined;
       setUsers((prev) => prev.map((u) => (u.id === id ? (rec = { ...u, status: "解約", cancelDate, payStatus: "停止" }) : u)));
+      push(supabase.from("members").update({ status: "解約", cancel_date: cancelDate, pay_status: "停止" }).eq("id", id));
       const u = users.find((x) => x.id === id);
       addLog("会員解約", `${u?.memberNo || id} ${u?.name || ""}（${u ? agentNoOf(u.agentId) : ""}）`);
       if (rec) void pushRows(TAB_USERS, [userToRow({ ...rec, agentNo: agentNoOf(rec.agentId) })], "upsert", "ユーザーID");
@@ -194,26 +216,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     reactivateUser: (id) => {
       let rec: User | undefined;
       setUsers((prev) => prev.map((u) => (u.id === id ? (rec = { ...u, status: "有効", cancelDate: undefined, payStatus: "入金済" }) : u)));
+      push(supabase.from("members").update({ status: "有効", cancel_date: null, pay_status: "入金済" }).eq("id", id));
       const u = users.find((x) => x.id === id);
       addLog("会員 再有効化", `${u?.memberNo || id} ${u?.name || ""}`);
       if (rec) void pushRows(TAB_USERS, [userToRow({ ...rec, agentNo: agentNoOf(rec.agentId) })], "upsert", "ユーザーID");
     },
 
-    // 公開フォームからの申込（見込み客）
     addLead: (l) => {
       const n = leads.length + 1;
       const rec: Lead = { ...l, id: `lead-new-${n}`, leadNo: "L-" + String(n).padStart(4, "0"), status: "申込", date: today() };
       setLeads((prev) => [rec, ...prev]);
+      push(supabase.from("leads").insert(leadDb(rec)));
       addLog("申込受付", `${rec.leadNo} ${rec.name}（紹介元 ${agentNoOf(rec.agentId)}）`, rec.name, "申込フォーム");
     },
 
     setLeadStatus: (id, status) => {
       setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)));
+      push(supabase.from("leads").update({ status }).eq("id", id));
       const l = leads.find((x) => x.id === id);
       addLog("申込ステータス変更", `${l?.leadNo || id} → ${status}`);
     },
 
-    // 会員化（登録・決済完了 → アクティブ会員として紹介元代理店へ紐付け）
     convertLead: (id, opts) => {
       const lead = leads.find((l) => l.id === id);
       if (!lead) return;
@@ -226,12 +249,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
       setUsers((prev) => [urec, ...prev]);
       setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status: "登録完了", convertedUserId: urec.id } : l)));
+      push(supabase.from("members").insert(userDb(urec)));
+      push(supabase.from("leads").update({ status: "登録完了", converted_member_id: urec.id }).eq("id", id));
       addLog("会員化（申込→登録完了）", `${lead.leadNo} ${lead.name} → ${urec.memberNo}（${agentNoOf(lead.agentId)}へ紐付け）`);
       void pushRows(TAB_USERS, [userToRow({ ...urec, agentNo: agentNoOf(lead.agentId) })], "upsert", "ユーザーID");
     },
 
     setRank: (id, rank) => {
       setBaseAgents((prev) => prev.map((a) => (a.id === id ? { ...a, rank } : a)));
+      push(supabase.from("agents").update({ rank }).eq("id", id));
       addLog("ランク変更", `${agentNoOf(id)} → ${rank}`);
     },
 
@@ -243,6 +269,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const code = isRuby ? no : "XL-" + Math.random().toString(36).slice(2, 6).toUpperCase();
       const rec: Agent = { ...a, id: `ag-${n}`, no, basePt: 0, code };
       setBaseAgents((prev) => [...prev, rec]);
+      push(supabase.from("agents").insert(agentDb(rec)));
       addLog("代理店登録", `${rec.no} ${rec.name}（${isRuby ? "ルビー" : "個人"}）`);
       void pushRows(TAB_AGENTS, [agentToRow({
         no: rec.no, name: rec.name, phone: rec.phone, kind: rec.kind,
@@ -254,6 +281,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     payReward: ({ key, agentId, amount, date }) => {
       if (amount <= 0) return;
       setPaid((prev) => ({ ...prev, [key]: { amount, date } }));
+      const kind = key.startsWith("shot::") ? "ショット報酬" : key.startsWith("ruby::") ? "ルビー紹介報酬" : "本人報酬";
+      const parts = key.split("::");
+      const ref_id = kind === "ショット報酬" ? parts[1] : null;
+      const month = kind === "ショット報酬" ? null : (parts[2] || CURRENT_MONTH);
+      push(supabase.from("reward_payouts").insert({ agent_id: agentId, kind, amount, month, ref_id, paid_date: date }));
       addLog("報酬振込", `${agentNoOf(agentId)} へ ${amount.toLocaleString()}円（${date}）`);
     },
   };
