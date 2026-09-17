@@ -35,10 +35,10 @@ export default function Home() {
           </Link>
         </div>
 
-        <div className="center" style={{ marginTop: 18 }}>
+        <div style={{ marginTop: 18, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
           <Link href="/join" className="btn ghost sm">🤝 代理店 新規登録フォーム</Link>
-          <Link href="/apply?ref=XL-A1A7" className="btn ghost sm" style={{ marginLeft: 8 }}>📨 見込み客 申込フォーム（デモ）</Link>
-          <Link href="/login" className="btn ghost sm" style={{ marginLeft: 8 }}>🔐 ログイン（二段階認証）</Link>
+          <Link href="/apply?ref=XL-A1A7" className="btn ghost sm">📨 見込み客 申込フォーム（デモ）</Link>
+          <Link href="/login" className="btn ghost sm">🔐 ログイン（二段階認証）</Link>
         </div>
 
         <div className="info-box" style={{ marginTop: 22 }}>
