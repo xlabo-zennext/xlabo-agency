@@ -1,0 +1,82 @@
+name: 本番へ自動反映 (GitHub Pages)
+
+# main に push されるたびに、自動でビルドして GitHub Pages へ反映します（push するだけ）。
+# 公開先: https://maedaakio0325-boop.github.io/xlabo-agency/
+# ※退職サポートと同方式。将来 自社ドメイン（例 xlabo.zennext-inc.com）へ移行可。
+#
+# 必要な Secrets（リポジトリ Settings → Secrets and variables → Actions）：
+#   NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   （任意）NEXT_PUBLIC_SHEET_WEBAPP_URL
+# ※Supabase の接続情報が無いと、デモデータを公開しないため公開を中止します。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 依存インストール
+        run: npm install
+
+      - name: 秘密情報がそろっているか確認
+        env:
+          URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "::error::Supabase の接続情報が Secrets にありません。デモモードの成果物を公開しないため中止します。"
+            exit 1
+          fi
+
+      - name: ビルド（本番モード＝Supabase接続・サブパス配信）
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SHEET_WEBAPP_URL: ${{ secrets.NEXT_PUBLIC_SHEET_WEBAPP_URL }}
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+
+      - name: 成果物がデモモードでないか検査
+        env:
+          URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if ! grep -rq "$URL" out/; then
+            echo "::error::成果物に Supabase の接続先が埋め込まれていません（デモモードの疑い）。公開を中止します。"
+            exit 1
+          fi
+          touch out/.nojekyll
+          echo "検査OK: $(find out -name '*.html' | wc -l) ページ"
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

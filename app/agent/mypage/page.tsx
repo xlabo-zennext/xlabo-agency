@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { statOf } from "@/lib/calc";
 import { RANKS, pt, rankLabelOf, RUBY } from "@/lib/config";
 import { Qr } from "@/components/Qr";
+import { absoluteUrl } from "@/lib/basePath";
 
 export default function MyPage() {
   const { stats, agents, viewAgentId, leads } = useStore();
@@ -16,10 +17,9 @@ export default function MyPage() {
   const rl = rankLabelOf(a);
   const [copied, setCopied] = useState(false);
 
-  // 紹介URL（申込フォーム）
-  const [origin, setOrigin] = useState("");
-  useEffect(() => { setOrigin(window.location.origin); }, []);
-  const applyUrl = `${origin}/apply?ref=${a.code}`;
+  // 紹介URL（申込フォーム）※配信先のbasePathも自動で付く（Pages配下でも正しいURLになる）
+  const [applyUrl, setApplyUrl] = useState("");
+  useEffect(() => { setApplyUrl(absoluteUrl(`/apply/?ref=${a.code}`)); }, [a.code]);
 
   // 自分の申込状況（自分に紐づく見込み客のみ）
   const myLeads = leads.filter((l) => l.agentId === a.id);
