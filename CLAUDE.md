@@ -18,7 +18,7 @@ npm run dev
 
 ## 本番公開（GitHub Pages・push するだけ）
 - `main` に push すると `.github/workflows/pages.yml` が自動でビルド＆公開。
-- 公開先：https://maedaakio0325-boop.github.io/xlabo-agency/
+- 公開先：https://xlabo-zennext.github.io/xlabo-agency/
 - **前提**：リポジトリの Secrets（Settings → Secrets and variables → Actions）に
   `NEXT_PUBLIC_SUPABASE_URL` と `NEXT_PUBLIC_SUPABASE_ANON_KEY` が必要。
   未設定だと「デモを公開しない」ため Actions は意図的に失敗する（正常な安全装置）。

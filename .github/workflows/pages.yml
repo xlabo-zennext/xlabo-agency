@@ -1,7 +1,7 @@
 name: 本番へ自動反映 (GitHub Pages)
 
 # main に push されるたびに、自動でビルドして GitHub Pages へ反映します（push するだけ）。
-# 公開先: https://maedaakio0325-boop.github.io/xlabo-agency/
+# 公開先: https://xlabo-zennext.github.io/xlabo-agency/
 # ※退職サポートと同方式。将来 自社ドメイン（例 xlabo.zennext-inc.com）へ移行可。
 #
 # 必要な Secrets（リポジトリ Settings → Secrets and variables → Actions）：
