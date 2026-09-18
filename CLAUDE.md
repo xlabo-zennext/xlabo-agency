@@ -25,6 +25,21 @@ npm run dev
 - 将来、自社ドメイン（例 `xlabo.zennext-inc.com`）へ移行する場合は Pages にカスタムドメインを設定し、
   ビルド時の `NEXT_PUBLIC_BASE_PATH` を空にする（`lib/basePath.ts` / `next.config.mjs` 参照）。
 
+## 商用移行：Vercel（本部名義・退職サポートと同じ形）
+GitHub Pages は無料枠で商用SaaS用途は規約NGのため、最終的に本部名義の Vercel Pro へ移す。
+同じコードで両対応済み（`next.config.mjs`）：
+- **Vercel（ルート配信・本番）**：`NEXT_PUBLIC_BASE_PATH` を設定しない → Next.js ネイティブビルド・basePath無し。
+- GitHub Pages（現行）：`pages.yml` が `NEXT_PUBLIC_BASE_PATH=/xlabo-agency` を渡す → 静的書き出し。
+
+**Vercel移行手順（本部Vercel Proアカウントで）**
+1. Vercel → Add New → Project → `xlabo-zennext/xlabo-agency` をインポート
+2. Environment Variables に登録：`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   （値は Supabase ref=fkkvataqoziyuogzxxmp のもの）。**`NEXT_PUBLIC_BASE_PATH` は設定しない**。
+3. Deploy → 発行URL（例 xlabo-agency.vercel.app）で ログイン・/apply・ダッシュボードを確認
+4. 移行後の整理：GitHub Pages のワークフロー(`.github/workflows/pages.yml`)は不要になるので停止/削除可。
+   リポジトリも非公開(Private)へ戻せる（Vercelは非公開リポでも接続可）。
+- 退職サポートと同じ手順・同じタイミングで実施できるよう準備済み。
+
 ## Supabase（本番DB・認証・権限）
 1. Supabase でプロジェクト作成（東京リージョン・アカウントは会社共通）
 2. SQL Editor で `supabase/schema.sql` → `supabase/rls.sql` を実行

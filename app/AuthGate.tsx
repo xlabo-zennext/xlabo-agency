@@ -46,6 +46,12 @@ function SupabaseGate({ children }: { children: React.ReactNode }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // パスワード変更
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [pwMsg, setPwMsg] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setReady(true); });
@@ -63,6 +69,19 @@ function SupabaseGate({ children }: { children: React.ReactNode }) {
     if (error) setErr("メールアドレスまたはパスワードが違います");
   };
   const logout = () => supabase.auth.signOut();
+
+  const changePw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pw1.length < 8) return setPwMsg("パスワードは8文字以上にしてください");
+    if (pw1 !== pw2) return setPwMsg("確認用パスワードと一致しません");
+    setPwBusy(true); setPwMsg("");
+    const { error } = await supabase.auth.updateUser({ password: pw1 });
+    setPwBusy(false);
+    if (error) { setPwMsg("変更に失敗しました：" + error.message); return; }
+    setPwMsg("パスワードを変更しました ✓");
+    setPw1(""); setPw2("");
+    setTimeout(() => { setPwOpen(false); setPwMsg(""); }, 1400);
+  };
 
   if (!session) {
     return (
@@ -85,8 +104,25 @@ function SupabaseGate({ children }: { children: React.ReactNode }) {
       {children}
       <div style={badgeStyle}>
         <span>🔐 {session.user.email}</span>
+        <button onClick={() => { setPwOpen(true); setPwMsg(""); }} style={logoutBtn}>パスワード変更</button>
+        <span style={{ opacity: 0.4 }}>|</span>
         <button onClick={logout} style={logoutBtn}>ログアウト</button>
       </div>
+
+      {pwOpen && (
+        <div style={{ ...wrapStyle, position: "fixed", inset: 0, zIndex: 10000, background: "rgba(16,32,63,.45)" }}>
+          <form onSubmit={changePw} style={cardStyle}>
+            <Brand />
+            <h1 style={{ fontSize: 17, color: "#10203f", margin: "10px 0 4px" }}>パスワード変更</h1>
+            <p style={{ fontSize: 12.5, color: "#7c889a", margin: "0 0 16px" }}>{session.user.email} の新しいパスワードを設定します（8文字以上）</p>
+            <input type="password" value={pw1} onChange={(e) => { setPw1(e.target.value); setPwMsg(""); }} placeholder="新しいパスワード" autoComplete="new-password" style={inputStyle(false)} />
+            <input type="password" value={pw2} onChange={(e) => { setPw2(e.target.value); setPwMsg(""); }} placeholder="新しいパスワード（確認）" autoComplete="new-password" style={inputStyle(false)} />
+            {pwMsg && <div style={{ color: pwMsg.includes("✓") ? "#18a86b" : "#c0392b", fontSize: 12.5, marginBottom: 10 }}>{pwMsg}</div>}
+            <button type="submit" disabled={pwBusy} style={{ ...btnStyle, opacity: pwBusy ? 0.6 : 1 }}>{pwBusy ? "変更中…" : "変更する"}</button>
+            <button type="button" onClick={() => { setPwOpen(false); setPw1(""); setPw2(""); setPwMsg(""); }} style={{ marginTop: 10, background: "none", border: "none", color: "#8a97a8", fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>キャンセル</button>
+          </form>
+        </div>
+      )}
     </>
   );
 }

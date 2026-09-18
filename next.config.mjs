@@ -1,16 +1,18 @@
 /** @type {import('next').NextConfig} */
 
-// 配信先によってURLの先頭に付く共通パス。
-//   GitHub Pages（/<リポジトリ名>/ 配下） → NEXT_PUBLIC_BASE_PATH=/xlabo-agency
-//   自社ドメイン（ルート配信）へ移行時      → 未設定（空文字）
-// 同じ値を lib/basePath.ts も読む（素の <img src="/..."> と申込リンク用）。
+// 配信先を1つのコードで両対応：
+//   GitHub Pages（サブパス配信）: NEXT_PUBLIC_BASE_PATH=/xlabo-agency を渡す
+//     → 静的書き出し(output:export)＋basePath で out/ を生成（pages.yml がこの形）
+//   Vercel（ルート配信・商用/本番）: NEXT_PUBLIC_BASE_PATH を渡さない
+//     → Next.js ネイティブビルド（basePathなし・ルート）。環境変数だけ設定すればそのまま動く
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 
 const nextConfig = {
-  output: 'export',              // 静的サイトとして書き出し（out/）※退職サポートと同方式
-  images: { unoptimized: true }, // 静的書き出し用
-  trailingSlash: true,           // 各ページを /path/ で出力（静的ホスト互換）
-  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
+  images: { unoptimized: true }, // 静的書き出し・画像最適化なしでどちらでも動く
+  trailingSlash: true,           // /path/ 形式（静的ホスト互換・Vercelでも可）
+  ...(basePath
+    ? { output: 'export', basePath, assetPrefix: basePath } // GitHub Pages 用
+    : {}),                                                    // Vercel はネイティブビルド
 };
 
 export default nextConfig;
