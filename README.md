@@ -3,7 +3,7 @@
 退職サポートプラス 代理店管理アプリ（`taishoku-agency-daiten`）の仕様をベースに、
 X-LABO のポイント制度へ作り替えた初期リリース設計プロトタイプです。
 
-## 起動（Windows / Node 環境）
+## 起動
 
 ```
 npm install
@@ -12,7 +12,11 @@ npm run dev
 
 → http://localhost:3360
 
-（このMac miniはNode未導入のため、開発・起動はWindows側で行ってください。`dev-launch.cmd` をダブルクリックでも起動できます。）
+ダブルクリックで起動したい場合は、**Mac は `dev-launch.command`／Windows は `dev-launch.cmd`**。
+（Mac で初回だけ「開けません」と出たら `chmod +x dev-launch.command` を一度実行）
+
+Mac に Node.js が入っていない場合は先に `brew install node`（または https://nodejs.org/ja から LTS版）。
+手順の詳細は [`Mac移行手順.md`](./Mac移行手順.md) にまとめています。
 
 ## ログイン（認証ゲート）
 
